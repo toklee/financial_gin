@@ -1,36 +1,49 @@
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
 from handlers import router
 import sqlite3
-from dotenv import load_dotenv
-
-load_dotenv()
+import os
 
 
-# Синхронная версия (без async)
 def init_db():
+    if os.path.exists('budget.db'):
+        os.remove('budget.db')
+
     conn = sqlite3.connect('budget.db')
     cursor = conn.cursor()
 
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
+        CREATE TABLE users (
+            user_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            birth_date TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            email TEXT NOT NULL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             amount REAL NOT NULL,
             category TEXT NOT NULL,
             type TEXT NOT NULL,
-            date TEXT NOT NULL
+            date TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
 
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE goals (
             user_id INTEGER PRIMARY KEY,
-            name TEXT,
-            birth_date TEXT,
-            phone TEXT,
-            bank TEXT
+            target_amount REAL NOT NULL,
+            daily_amount REAL NOT NULL,
+            reminder_time TEXT DEFAULT '19:00',
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
 
@@ -39,20 +52,16 @@ def init_db():
 
 
 async def main():
-    # Инициализируем базу данных (синхронный вызов)
     init_db()
-
-    bot = Bot(token="8075714721:AAF053-mBOuGP_AxzPUXeaLhABQM04CIgJE")
-    dp = Dispatcher()
+    bot = Bot(
+        token="8075714721:AAF053-mBOuGP_AxzPUXeaLhABQM04CIgJE",
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
 
     await dp.start_polling(bot)
 
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print('Бот остановлен')
-    except Exception as e:
-        print(f'Произошла ошибка: {e}')
+    asyncio.run(main())

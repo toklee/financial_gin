@@ -1,146 +1,391 @@
-from aiogram import F, Router
-from aiogram.types import Message
+from datetime import datetime, time, timedelta
+from aiogram import Bot, F, Router
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import keyboard as kb
 import sqlite3
-from datetime import datetime
+import asyncio
+import re
 
 router = Router()
+
 
 class Register(StatesGroup):
     name = State()
     birth = State()
-    number = State()
+    phone = State()
+    email = State()
 
-# Состояния для операций с бюджетом
+
 class TransactionStates(StatesGroup):
-    TYPE = State()
     AMOUNT = State()
-    CATEGORY = State()
 
 
-# Добавим состояние для хранения выбранного банка
-class BankSelection:
-    selected_bank = None
+class GoalStates(StatesGroup):
+    AMOUNT = State()
+
+
+class SettingsStates(StatesGroup):
+    CHOOSE_OPTION = State()
+    UPDATE_USER_DATA = State()
+    UPDATE_GOAL = State()
+
+
+def get_settings_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔄 Изменить данные")],
+            [KeyboardButton(text="🎯 Изменить цель")],
+            [KeyboardButton(text="📊 Все траты")],
+            [KeyboardButton(text="🔙 Назад")]
+        ],
+        resize_keyboard=True,
+        persistent=True
+    )
+
+
+async def execute_sql(query, params=()):
+    conn = sqlite3.connect('budget.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute(query, params)
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"SQL error: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+async def fetch_sql(query, params=()):
+    conn = sqlite3.connect('budget.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute(query, params)
+        return cursor.fetchall()
+    except sqlite3.Error as e:
+        print(f"SQL error: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def is_valid_email(email):
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+
+async def reset_state(state: FSMContext):
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
-    await message.answer('Привет! Я Финансовый Джин - твой друг, который поможет тебе следить за своими финансами.Давай сначала определим, каким банком ты пользуешься, а затем напиши "/register", чтобы пройти регистрацию', reply_markup=kb.main)
-
-@router.message(Command('help'))
-async def cmd_help(message: Message):
-    await message.answer('Я помогу тебе анализировать свои расходы и доходы, выделю категории покупок, на которые ты тратишь больше всего денег, а также напомню о приближающихся оплатах подписок, сотовой связи и ещё многое другое! ')
-
-@router.message(F.text == 'Сбербанк')
-async def cards(message: Message):
-    BankSelection.selected_bank = 'Сбербанк'  # Сохраняем выбранный банк
-    await message.answer('Выберите вид карты', reply_markup=kb.cards)
-
-@router.message(F.text == 'Tinkoff')
-async def cards(message: Message):
-    BankSelection.selected_bank = 'Tinkoff'  # Сохраняем выбранный банк
-    await message.answer('Выберите вид карты', reply_markup=kb.cards)
-
-# Обработчик выбора типа карты
-@router.callback_query(F.data.in_(['Дебетовая', 'Кредитная', 'Счёт']))
-async def card_type_selected(callback: CallbackQuery):
-    if not hasattr(BankSelection, 'selected_bank') or not BankSelection.selected_bank:
-        await callback.answer("❌ Сначала выберите банк!", show_alert=True)
-        return
-
-    # Определяем правильное название карты/счёта
-    card_type = callback.data.lower()
-    if card_type == 'дебетовая':
-        card_text = 'дебетовую карту'
-    elif card_type == 'кредитная':
-        card_text = 'кредитную карту'
-    else:  # Счёт
-        card_text = 'счёт'
-
-    await callback.message.answer(
-        f"✅ Отлично! Значит, мы будем отслеживать {card_text} в банке {BankSelection.selected_bank}."
+async def cmd_start(message: Message, state: FSMContext):
+    await reset_state(state)
+    await message.answer(
+        '💰 Привет! Я Финансовый Джин - твой помощник по учету финансов.\n'
+        'Для начала регистрации напиши /register',
+        reply_markup=kb.main
     )
-    await callback.answer()  # закрываем всплывающее уведомление
+
 
 @router.message(Command('register'))
-async def register(message: Message, state: FSMContext):
+async def start_registration(message: Message, state: FSMContext):
+    await reset_state(state)
     await state.set_state(Register.name)
-    await message.answer('Введите ваше ФИО')
+    await message.answer("Введите ваше ФИО:", reply_markup=kb.remove_keyboard)
+
 
 @router.message(Register.name)
-async def register_name(message: Message, state: FSMContext):
-    await state.update_data(name = message.text)
+async def process_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
     await state.set_state(Register.birth)
-    await message.answer("Введите вашу дату рождения")
+    await message.answer("Введите дату рождения (ДД.ММ.ГГГГ):")
+
 
 @router.message(Register.birth)
-async def register_birth(message: Message, state: FSMContext):
-    await state.update_data(birth = message.text)
-    await state.set_state(Register.number)
-    await message.answer("Введите ваш номер телефона", reply_markup=kb.get_number)
+async def process_birth(message: Message, state: FSMContext):
+    await state.update_data(birth=message.text)
+    await state.set_state(Register.phone)
+    await message.answer("Отправьте номер телефона:", reply_markup=kb.get_number)
 
-@router.message(Register.number, F.contact)
-async def register_number(message: Message, state: FSMContext):
-    await state.update_data(number = message.contact.phone_number)
+
+@router.message(Register.phone, F.contact)
+async def process_phone(message: Message, state: FSMContext):
+    await state.update_data(phone=message.contact.phone_number)
+    await state.set_state(Register.email)
+    await message.answer("Введите email. Пример example@mail.ru:", reply_markup=kb.remove_keyboard)
+
+
+@router.message(Register.email)
+async def process_email(message: Message, state: FSMContext):
+    if not is_valid_email(message.text):
+        await message.answer("Некорректный email. Попробуйте еще раз:")
+        return
+
     data = await state.get_data()
-    await message.answer(f'Ваше имя: {data["name"]}\nВаша дата рождения: {data["birth"]}\nНомер: {data["number"]}')
+    success = await execute_sql(
+        "INSERT INTO users (user_id, name, birth_date, phone, email) VALUES (?, ?, ?, ?, ?)",
+        (message.from_user.id, data['name'], data['birth'], data['phone'], message.text)
+    )
+
+    if success:
+        await message.answer(
+            "✅ Регистрация завершена!\n"
+            f"👤 {data['name']}\n"
+            f"🎂 {data['birth']}\n"
+            f"📱 {data['phone']}\n"
+            f"📧 {message.text}",
+            reply_markup=kb.main
+        )
+    else:
+        await message.answer("❌ Ошибка сохранения", reply_markup=kb.main)
     await state.clear()
 
-# Обработчик команды /budget (начало работы с бюджетом)
-@router.message(Command("budget"))
-async def cmd_budget(message: Message, state: FSMContext):
-    await message.answer(
-        "Хотите добавить доход или расход?",
-        reply_markup=kb.operation_type_keyboard
-    )
-    await state.set_state(TransactionStates.TYPE)
 
-@router.message(TransactionStates.TYPE, F.text.in_(["Доход", "Расход"]))
-async def get_type(message: Message, state: FSMContext):
-    op_type = message.text.lower()
-    await state.update_data(type=op_type)
+@router.message(F.text == 'Настройки')
+async def settings_menu(message: Message, state: FSMContext):
+    await reset_state(state)
+    await state.set_state(SettingsStates.CHOOSE_OPTION)
+    await message.answer("⚙️ Настройки:", reply_markup=get_settings_keyboard())
+
+
+@router.message(SettingsStates.CHOOSE_OPTION, F.text == "🔄 Изменить данные")
+async def update_user_data(message: Message, state: FSMContext):
+    await state.set_state(SettingsStates.UPDATE_USER_DATA)
+    user_data = await fetch_sql(
+        "SELECT name, birth_date, email FROM users WHERE user_id = ?",
+        (message.from_user.id,)
+    )
+
+    if user_data:
+        name, birth, email = user_data[0]
+        await message.answer(
+            f"Текущие данные:\n{name}, {birth}, {email}\n\n"
+            "Введите новые данные в формате:\n"
+            "ФИО, Дата рождения, Email\n\n"
+            "Пример:\nИванов Иван, 01.01.1990, ivan@mail.ru",
+            reply_markup=kb.remove_keyboard
+        )
+    else:
+        await message.answer("❌ Данные не найдены", reply_markup=get_settings_keyboard())
+        await state.clear()
+
+
+@router.message(SettingsStates.UPDATE_USER_DATA)
+async def process_update_data(message: Message, state: FSMContext):
+    try:
+        parts = [p.strip() for p in message.text.split(',')]
+        if len(parts) != 3:
+            raise ValueError("Нужно ввести 3 значения через запятую")
+
+        name, birth, email = parts
+        if not is_valid_email(email):
+            raise ValueError("Некорректный email")
+
+        success = await execute_sql(
+            "UPDATE users SET name = ?, birth_date = ?, email = ? WHERE user_id = ?",
+            (name, birth, email, message.from_user.id)
+        )
+
+        if success:
+            await message.answer("✅ Данные обновлены!", reply_markup=kb.main)
+        else:
+            await message.answer("❌ Ошибка обновления", reply_markup=kb.main)
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=get_settings_keyboard())
+    finally:
+        await state.clear()
+
+
+@router.message(SettingsStates.CHOOSE_OPTION, F.text == "🎯 Изменить цель")
+async def update_goal(message: Message, state: FSMContext):
+    await state.set_state(SettingsStates.UPDATE_GOAL)
+    goal = await fetch_sql(
+        "SELECT target_amount FROM goals WHERE user_id = ?",
+        (message.from_user.id,)
+    )
+
+    if goal:
+        await message.answer(
+            f"Текущая цель: {goal[0][0]} руб.\n"
+            "Введите новую сумму цели:",
+            reply_markup=kb.remove_keyboard
+        )
+    else:
+        await message.answer("Введите сумму цели:", reply_markup=kb.remove_keyboard)
+
+
+@router.message(SettingsStates.UPDATE_GOAL)
+async def process_update_goal(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text)
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной")
+
+        daily = amount / 200
+        success = await execute_sql(
+            "INSERT OR REPLACE INTO goals (user_id, target_amount, daily_amount) VALUES (?, ?, ?)",
+            (message.from_user.id, amount, daily)
+        )
+
+        if success:
+            await message.answer(
+                f"✅ Цель обновлена!\n"
+                f"Ежедневно: {daily:.2f} руб.",
+                reply_markup=kb.main
+            )
+        else:
+            await message.answer("❌ Ошибка сохранения", reply_markup=kb.main)
+    except ValueError:
+        await message.answer("❌ Введите число (например: 10000)", reply_markup=get_settings_keyboard())
+    finally:
+        await state.clear()
+
+
+@router.message(SettingsStates.CHOOSE_OPTION, F.text == "📊 Все траты")
+async def show_expenses(message: Message):
+    expenses = await fetch_sql(
+        "SELECT amount, category, date FROM transactions "
+        "WHERE user_id = ? AND type = 'расход' "
+        "ORDER BY date DESC LIMIT 50",
+        (message.from_user.id,)
+    )
+
+    if not expenses:
+        await message.answer("📭 Нет данных о тратах", reply_markup=get_settings_keyboard())
+        return
+
+    total = sum(e[0] for e in expenses)
+    report = ["📅 Ваши траты:", ""]
+
+    for amount, category, date in expenses:
+        report.append(f"{date}: {amount} руб. - {category}")
+
+    report.extend(["", f"💵 Всего: {total} руб."])
+
+    # Разбиваем на сообщения по 10 трат, если их много
+    for i in range(0, len(report), 10):
+        await message.answer("\n".join(report[i:i + 10]), reply_markup=get_settings_keyboard())
+
+
+@router.message(SettingsStates.CHOOSE_OPTION, F.text == "🔙 Назад")
+async def back_to_menu(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Главное меню:", reply_markup=kb.main)
+
+
+@router.message(F.text == 'Внести траты')
+async def add_expense(message: Message, state: FSMContext):
+    await reset_state(state)
+    await state.set_state(TransactionStates.AMOUNT)
     await message.answer(
-        f"Введите сумму {op_type}a:",
+        "💸 Введите сумму траты и категорию товара (например: 500 продукты). Основные категории: Еда, Транспорт, Жильё, Учёба, Развлечения, Медицина, Другое(можете ввести категорию вручную)",
         reply_markup=kb.remove_keyboard
     )
-    await state.set_state(TransactionStates.AMOUNT)
 
 
 @router.message(TransactionStates.AMOUNT)
-async def get_amount(message: Message, state: FSMContext):
+async def process_expense(message: Message, state: FSMContext):
+    if message.text in ['Настройки', 'Внести траты', 'Добавить цель']:
+        await state.clear()
+        return
+
+    try:
+        parts = message.text.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            raise ValueError("Нужно ввести сумму и категорию")
+
+        amount = float(parts[0])
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной")
+
+        category = parts[1].strip()
+        if not category:
+            raise ValueError("Категория не может быть пустой")
+
+        success = await execute_sql(
+            "INSERT INTO transactions (user_id, amount, category, type, date) VALUES (?, ?, ?, ?, ?)",
+            (message.from_user.id, amount, category, "расход", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+
+        if success:
+            await message.answer(
+                f"✅ Трата {amount} руб. на '{category}' сохранена!",
+                reply_markup=kb.main
+            )
+        else:
+            await message.answer("❌ Ошибка сохранения", reply_markup=kb.main)
+    except ValueError as e:
+        await message.answer(f"❌ {str(e)}\nПример: 500 продукты", reply_markup=kb.main)
+    finally:
+        await state.clear()
+
+
+@router.message(F.text == 'Добавить цель')
+async def add_goal(message: Message, state: FSMContext):
+    await reset_state(state)
+    await state.set_state(GoalStates.AMOUNT)
+    await message.answer(
+        "🎯 Введите сумму цели:",
+        reply_markup=kb.remove_keyboard
+    )
+
+
+@router.message(GoalStates.AMOUNT)
+async def process_goal(message: Message, state: FSMContext):
     try:
         amount = float(message.text)
-        await state.update_data(amount=amount)
-        data = await state.get_data()
-        await message.answer(
-            "Выберите категорию:",
-            reply_markup=kb.get_categories_keyboard(data["type"])
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной")
+
+        daily = amount / 200
+        success = await execute_sql(
+            "INSERT OR REPLACE INTO goals (user_id, target_amount, daily_amount) VALUES (?, ?, ?)",
+            (message.from_user.id, amount, daily)
         )
-        await state.set_state(TransactionStates.CATEGORY)
+
+        if success:
+            asyncio.create_task(send_daily_reminder(message.from_user.id, amount, daily))
+            await message.answer(
+                f"✅ Цель {amount} руб. установлена!\n"
+                f"Ежедневно: {daily:.2f} руб.\n"
+                "Напоминания будут приходить в 19:00",
+                reply_markup=kb.main
+            )
+        else:
+            await message.answer("❌ Ошибка сохранения", reply_markup=kb.main)
     except ValueError:
-        await message.answer("Пожалуйста, введите число:")
+        await message.answer("❌ Введите число (например: 10000)", reply_markup=kb.main)
+    finally:
+        await state.clear()
 
 
-@router.message(TransactionStates.CATEGORY)
-async def get_category(message: Message, state: FSMContext):
-    category = message.text
-    data = await state.get_data()
-    # Сохранение в БД
-    conn = sqlite3.connect("budget.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?)",
-        (None, message.from_user.id, data['amount'], category,
-         data['type'], datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    )
-    conn.commit()
-    conn.close()
+async def send_daily_reminder(user_id: int, goal: float, daily: float):
+    bot = Bot.get_current()
+    while True:
+        now = datetime.now()
+        target = datetime.combine(now.date(), time(19, 0))
 
-    await message.answer(
-        f"✅ {data['type'].capitalize()} {data['amount']} руб. "
-        f"в категории '{category}' сохранен!",
-        reply_markup=kb.main
-    )
-    await state.clear()
+        if now > target:
+            target += timedelta(days=1)
+
+        await asyncio.sleep((target - now).total_seconds())
+
+        try:
+            await bot.send_message(
+                user_id,
+                f"⏰ Напоминание!\n"
+                f"Сегодня нужно отложить {daily:.2f} руб.\n"
+                f"Цель: {goal} руб.",
+                reply_markup=kb.main
+            )
+        except Exception as e:
+            print(f"Ошибка напоминания: {e}")
+
+        await asyncio.sleep(86400)  # Ждем 24 часа
