@@ -7,7 +7,7 @@ from aiogram.types import (
 main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text='Настройки'), KeyboardButton(text='Внести траты')],
-        [KeyboardButton(text='Добавить цель')]
+        [KeyboardButton(text='Добавить цель'), KeyboardButton(text='Статистика')]
     ],
     resize_keyboard=True,
     persistent=True

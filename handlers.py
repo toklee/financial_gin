@@ -389,3 +389,61 @@ async def send_daily_reminder(user_id: int, goal: float, daily: float):
             print(f"Ошибка напоминания: {e}")
 
         await asyncio.sleep(86400)  # Ждем 24 часа
+
+@router.message(F.text == 'Статистика')
+async def show_statistics(message: Message):
+    now = datetime.now()
+    current_month = now.strftime("%Y-%m")
+    last_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    three_months_ago = (now - timedelta(days=90)).strftime("%Y-%m-%d")
+    six_months_ago = (now - timedelta(days=180)).strftime("%Y-%m-%d")
+    current_date = now.strftime("%Y-%m-%d")
+
+    # Статистика по категориям за текущий месяц
+    categories = await fetch_sql(
+        "SELECT category, SUM(amount) FROM transactions "
+        "WHERE user_id = ? AND type = 'расход' AND strftime('%Y-%m', date) = ? "
+        "GROUP BY category ORDER BY SUM(amount) DESC",
+        (message.from_user.id, current_month)
+    )
+
+    # Общие суммы за периоды
+    periods = [
+        ("Текущий месяц", 
+         "strftime('%Y-%m', date) = ?", 
+         [current_month]),
+        
+        ("Прошлый месяц", 
+         "strftime('%Y-%m', date) = ?", 
+         [last_month]),
+        
+        ("3 месяца", 
+         "date BETWEEN ? AND ?", 
+         [three_months_ago, current_date]),
+        
+        ("6 месяцев", 
+         "date BETWEEN ? AND ?", 
+         [six_months_ago, current_date])
+    ]
+
+    response = ["<b>Статистика расходов</b>\n"]
+
+    if categories:
+        response.append("\n<b>По категориям в этом месяце:</b>")
+        for category, amount in categories:
+            response.append(f"▪️ {category}: {amount:.2f} руб.")
+    else:
+        response.append("\nНет данных о расходах в этом месяце.")
+
+    response.append("\n<b>Общие суммы:</b>")
+    for period_name, condition, params in periods:
+        total = await fetch_sql(
+            f"SELECT SUM(amount) FROM transactions "
+            f"WHERE user_id = ? AND type = 'расход' AND {condition}",
+            (message.from_user.id, *params)
+        )
+        
+        amount = total[0][0] if total and total[0][0] is not None else 0
+        response.append(f"{period_name}: {amount:.2f} руб.")
+
+    await message.answer("\n".join(response), reply_markup=kb.main)
