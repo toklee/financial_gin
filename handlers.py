@@ -88,7 +88,7 @@ async def reset_state(state: FSMContext):
 async def cmd_start(message: Message, state: FSMContext):
     await reset_state(state)
     await message.answer(
-        '💰 Привет! Я Финансовый Джин - твой помощник по учету финансов.\n'
+        '💰 Привет! Я Финансовый Джинн - твой помощник по учету финансов.\n'
         'Для начала регистрации напиши /register',
         reply_markup=kb.main
     )
