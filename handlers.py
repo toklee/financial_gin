@@ -8,6 +8,8 @@ import keyboard as kb
 import sqlite3
 import asyncio
 import re
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 router = Router()
 
@@ -399,13 +401,46 @@ async def show_statistics(message: Message):
     six_months_ago = (now - timedelta(days=180)).strftime("%Y-%m-%d")
     current_date = now.strftime("%Y-%m-%d")
 
-    # Статистика по категориям за текущий месяц
+    # Получаем данные по категориям
     categories = await fetch_sql(
         "SELECT category, SUM(amount) FROM transactions "
         "WHERE user_id = ? AND type = 'расход' AND strftime('%Y-%m', date) = ? "
         "GROUP BY category ORDER BY SUM(amount) DESC",
         (message.from_user.id, current_month)
     )
+
+    # Создаем круговую диаграмму, если есть данные
+    if categories:
+        labels = [cat[0] for cat in categories]
+        sizes = [float(cat[1]) for cat in categories]
+        total = sum(sizes)
+        percentages = [f'{(size/total)*100:.1f}%' for size in sizes]
+
+        plt.figure(figsize=(8, 8))
+        plt.pie(sizes, labels=labels, autopct=lambda p: f'{p:.1f}%', startangle=140)
+        plt.title(f'Расходы за {current_month} (Всего: {total:.2f} руб.)')
+        plt.axis('equal')
+
+        # Сохраняем в буфер
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=80)
+        buf.seek(0)
+        plt.close()
+        
+        await message.answer_photo(
+            photo=buf,
+            caption="📊 Круговая диаграмма расходов по категориям"
+        )
+
+    # текстовый отчет
+    response = ["📊 <b>Статистика расходов</b>\n"]
+
+    if categories:
+        response.append("\n<b>По категориям в этом месяце:</b>")
+        for category, amount in categories:
+            response.append(f"▪️ {category}: {amount:.2f} руб.")
+    else:
+        response.append("\nНет данных о расходах в этом месяце.")
 
     # Общие суммы за периоды
     periods = [
@@ -426,15 +461,6 @@ async def show_statistics(message: Message):
          [six_months_ago, current_date])
     ]
 
-    response = ["<b>Статистика расходов</b>\n"]
-
-    if categories:
-        response.append("\n<b>По категориям в этом месяце:</b>")
-        for category, amount in categories:
-            response.append(f"▪️ {category}: {amount:.2f} руб.")
-    else:
-        response.append("\nНет данных о расходах в этом месяце.")
-
     response.append("\n<b>Общие суммы:</b>")
     for period_name, condition, params in periods:
         total = await fetch_sql(
@@ -444,6 +470,6 @@ async def show_statistics(message: Message):
         )
         
         amount = total[0][0] if total and total[0][0] is not None else 0
-        response.append(f"{period_name}: {amount:.2f} руб.")
+        response.append(f"▪️ {period_name}: {amount:.2f} руб.")
 
     await message.answer("\n".join(response), reply_markup=kb.main)

@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
