@@ -5,8 +5,11 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from handlers import router
 import sqlite3
+from dotenv import load_dotenv
 import os
 
+load_dotenv()  # Загружает переменные из .env
+TOKEN = os.getenv("TOKEN")  # Получает токен
 
 def init_db():
     if os.path.exists('budget.db'):
@@ -54,7 +57,7 @@ def init_db():
 async def main():
     init_db()
     bot = Bot(
-        token="8075714721:AAF053-mBOuGP_AxzPUXeaLhABQM04CIgJE",
+        token=TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher(storage=MemoryStorage())
