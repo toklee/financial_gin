@@ -1,5 +1,6 @@
 from datetime import datetime, time, timedelta
 from aiogram import Bot, F, Router
+from aiogram.types import BufferedInputFile
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import State, StatesGroup
