@@ -111,40 +111,47 @@ async def process_name(message: Message, state: FSMContext):
     await message.answer("Введите дату рождения (ДД.ММ.ГГГГ):")
 
 
-@router.message(Register.birth)
-async def process_birth(message: Message, state: FSMContext):
-    try:
-        # Проверка формата с регулярным выражением
-        if not re.fullmatch(r'^\d{2}\.\d{2}\.\d{4}$', message.text.strip()):
-            raise ValueError("Неверный формат даты")
+@router.message(Register.name)
+async def process_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await state.set_state(Register.birth)
+    (await message.answer("Введите дату рождения (ДД.ММ.ГГГГ):")
 
-        day, month, year = map(int, message.text.split('.'))
 
-    # Проверка корректности даты
-        if not (1 <= day <= 31):
-            raise ValueError("День должен быть между 1 и 31")
-        if not (1 <= month <= 12):
-            raise ValueError("Месяц должен быть между 1 и 12")
-        if year < 1900 or year > datetime.now().year - 5:  # Минимум 5 лет
-            raise ValueError("Некорректный год рождения")
+     @router.message(Register.birth)
+     async def process_birth(message: Message, state: FSMContext):
+         try:
+             # Проверка формата с регулярным выражением
+             if not re.fullmatch(r'^\d{2}\.\d{2}\.\d{4}$', message.text.strip()):
+                 raise ValueError("Неверный формат даты")
 
-        # Проверка существования даты
-        datetime(year, month, day)
+             day, month, year = map(int, message.text.split('.'))
 
-        # Если все проверки пройдены
-        await state.update_data(birth=message.text)
-        await state.set_state(Register.phone)
-        await message.answer("✅ Дата рождения сохранена! Теперь отправьте номер телефона:", reply_markup=kb.get_number)
+         # Проверка корректности даты
+             if not (1 <= day <= 31):
+                 raise ValueError("День должен быть между 1 и 31")
+             if not (1 <= month <= 12):
+                 raise ValueError("Месяц должен быть между 1 и 12")
+             if year < 1900 or year > datetime.now().year - 5:  # Минимум 5 лет
+                 raise ValueError("Некорректный год рождения")
 
-    except ValueError as e:
-        await message.answer(
-            f"❌ Ошибка: {str(e)}\n"
-            "Пожалуйста, введите дату рождения в формате ДД.ММ.ГГГГ\n"
-            "Пример: 15.05.1990"
-        )
-    except Exception as e:
-        await message.answer("⚠️ Произошла непредвиденная ошибка. Попробуйте ещё раз.")
-        print(f"Ошибка при обработке даты рождения: {e}")
+             # Проверка существования даты
+             datetime(year, month, day)
+
+             # Если все проверки пройдены
+             await state.update_data(birth=message.text)
+             await state.set_state(Register.phone)
+             await message.answer("✅ Дата рождения сохранена! Теперь отправьте номер телефона:", reply_markup=kb.get_number)
+
+         except ValueError as e:
+             await message.answer(
+                 f"❌ Ошибка: {str(e)}\n"
+                 "Пожалуйста, введите дату рождения в формате ДД.ММ.ГГГГ\n"
+                 "Пример: 15.05.1990"
+             )
+         except Exception as e:
+             await message.answer("⚠️ Произошла непредвиденная ошибка. Попробуйте ещё раз.")
+             print(f"Ошибка при обработке даты рождения: {e}")
 
 
 @router.message(Register.birth)
