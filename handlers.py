@@ -204,11 +204,22 @@ async def process_email(message: Message, state: FSMContext):
     await state.update_data(email=message.text)
     await state.set_state(Register.password)  # Новое состояние для пароля
 
+    
 @router.message(Register.password)
 async def process_password(message: Message, state: FSMContext):
+    try:
+        await message.delete()
+    except:
+        pass   
+        
     password = message.text.strip()
     if len(password) < 4:
         await message.answer("❌ Пароль должен быть не менее 4 символов. Попробуйте еще раз:")
+        await asyncio.sleep(5)
+        try:
+            await error_msg.delete()
+        except:
+            pass
         return
 
     data = await state.get_data()
