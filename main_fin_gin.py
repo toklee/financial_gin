@@ -1,4 +1,6 @@
 import asyncio
+import requests
+import time
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -13,6 +15,14 @@ import os
 load_dotenv()  # Загружает переменные из .env
 
 TOKEN = os.getenv("TOKEN")
+
+
+def auto_ping():
+    while True:
+        requests.get("https://replit.com/@annadanilenko06/financialgin-2?v=1") 
+        time.sleep(300)  # 5 минут
+
+Thread(target=auto_ping, daemon=True).start()
 
 
 # --- Инициализация Flask (для Replit 24/7) ---
