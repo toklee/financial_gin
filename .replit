@@ -3,7 +3,7 @@ run = "python main.py"
 
 [nix]
 channel = "stable-24_05"
-packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
+packages = ["cairo", "cargo", "ffmpeg-full", "freetype", "ghostscript", "gobject-introspection", "gtk3", "libiconv", "pkg-config", "qhull", "rustc", "tcl", "tk"]
 
 run = "python main_fin_gin.py"
 

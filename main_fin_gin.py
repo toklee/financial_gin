@@ -67,7 +67,29 @@ async def main():
     dp.include_router(router)
 
     await dp.start_polling(bot)
+
+
+async def on_startup():
+    """Действия при запуске бота"""
+    print("🟢 Бот запускается...")
+    if await init_db():
+        print("✅ База данных готова к работе")
+    else:
+        print("❌ Проблемы с инициализацией БД!")
+
+
+async def init_db():
+    try:
+        await execute_sql("CREATE TABLE IF NOT EXISTS users (...)")
+        print("Таблицы созданы")
+        return True
+    except Exception as e:
+        print(f"Ошибка инициализации БД: {e}")
+        return False
     
 
 if __name__ == '__main__':
+    from aiogram import executor
+    executor.start_polling(dp, on_startup=on_startup)
     asyncio.run(main())
+    asyncio.run(init_db())

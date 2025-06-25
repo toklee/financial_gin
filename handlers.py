@@ -4,11 +4,13 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from aiogram.enums import ParseMode
 import keyboard as kb
 import sqlite3
 import asyncio
 import re
 import bcrypt
+
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -24,6 +26,7 @@ class Register(StatesGroup):
     birth = State()
     phone = State()
     email = State()
+    password = State()
 
 
 class TransactionStates(StatesGroup):
@@ -51,6 +54,39 @@ def get_settings_keyboard():
         resize_keyboard=True,
         persistent=True
     )
+
+
+async def init_db():
+    try:
+        await execute_sql("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                birth_date TEXT,
+                phone TEXT,
+                email TEXT UNIQUE,
+                password_hash TEXT NOT NULL,
+                registered_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await execute_sql("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                type TEXT CHECK(type IN ('доход', 'расход')),
+                date TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        """)
+
+        print("✅ Таблицы базы данных успешно созданы")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка инициализации БД: {e}")
+        return False
 
 
 async def execute_sql(query, params=()):
@@ -177,24 +213,50 @@ async def process_password(message: Message, state: FSMContext):
 
     data = await state.get_data()
     hashed_password = hash_password(password)
+    
+    try:
+        await init_db()
 
-    success = await execute_sql(
-        "INSERT INTO users (user_id, name, birth_date, phone, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
-        (message.from_user.id, data['name'], data['birth'], data['phone'], data['email'], hashed_password)
-    )
+        columns = await fetch_sql("PRAGMA table_info(users)")
+        if not any(col[1] == 'password_hash' for col in columns):
+            await execute_sql("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
 
-    if success:
-        await message.answer(
-            "✅ Регистрация завершена! Теперь при каждом входе вводите пароль.",
-            f"👤 {data['name']}\n"
-            f"🎂 {data['birth']}\n"
-            f"📱 {data['phone']}\n"
-            f"📧 {message.text}",
-            reply_markup=kb.main
+        # Проверяем, не зарегистрирован ли уже email
+        existing_user = await fetch_sql("SELECT 1 FROM users WHERE email = ?", (data['email'],))
+        if existing_user:
+            await message.answer("❌ Этот email уже зарегистрирован. Используйте другой email.")
+            await state.clear()
+            return
+
+        # Пытаемся сохранить пользователя
+        success = await execute_sql(
+            "INSERT INTO users (user_id, name, birth_date, phone, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
+            (message.from_user.id, data['name'], data['birth'], data['phone'], data['email'], hashed_password)
         )
-    else:
-        await message.answer("❌ Ошибка сохранения", reply_markup=kb.main)
-    await state.clear()
+
+        if success:
+            await message.answer(
+                "✅ Регистрация завершена! Теперь при каждом входе вводите пароль.\n"
+                f"👤 {data['name']}\n"
+                f"🎂 {data['birth']}\n"
+                f"📱 {data['phone']}\n"
+                f"📧 {data['email']}",
+                reply_markup=kb.main
+            )
+        else:
+            await message.answer("❌ Ошибка сохранения данных", reply_markup=kb.main)
+
+    except sqlite3.IntegrityError:
+        await message.answer("❌ Этот email уже зарегистрирован", reply_markup=kb.main)
+    except sqlite3.Error as e:
+        await message.answer(f"❌ Ошибка базы данных: {str(e)}", reply_markup=kb.main)
+        print(f"Database error: {e}")
+    except Exception as e:
+        await message.answer("❌ Произошла непредвиденная ошибка", reply_markup=kb.main)
+        print(f"Unexpected error: {e}")
+    finally:
+        await state.clear()
+        
 
 @router.message(F.text == 'Внести траты')
 async def add_expense(message: Message, state: FSMContext):
@@ -499,4 +561,8 @@ async def show_statistics(message: Message):
         amount = total[0][0] if total and total[0][0] is not None else 0
         response.append(f"{period_name}: {amount:.2f} руб.")
 
-    await message.answer("\n".join(response), reply_markup=kb.main)
+    await message.answer(
+        "\n".join(response),
+        reply_markup=kb.main,
+        parse_mode=ParseMode.HTML  
+    )
