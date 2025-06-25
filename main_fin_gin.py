@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()  # Загружает переменные из .env
-TOKEN = os.getenv("TOKEN")  # Получает токен
+BOT_TOKEN = os.getenv("TOKEN")  # Получает токен
 
 def init_db():
     if os.path.exists('budget.db'):
@@ -60,7 +60,7 @@ def init_db():
 async def main():
     init_db()
     bot = Bot(
-        token=TOKEN,
+        token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher(storage=MemoryStorage())
