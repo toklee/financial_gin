@@ -232,13 +232,6 @@ async def process_password(message: Message, state: FSMContext):
         if not any(col[1] == 'password_hash' for col in columns):
             await execute_sql("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
 
-        # Проверяем, не зарегистрирован ли уже email
-        existing_user = await fetch_sql("SELECT 1 FROM users WHERE email = ?", (data['email'],))
-        if existing_user:
-            await message.answer("❌ Этот email уже зарегистрирован. Используйте другой email.")
-            await state.clear()
-            return
-
         # Пытаемся сохранить пользователя
         success = await execute_sql(
             "INSERT INTO users (user_id, name, birth_date, phone, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
@@ -257,8 +250,6 @@ async def process_password(message: Message, state: FSMContext):
         else:
             await message.answer("❌ Ошибка сохранения данных", reply_markup=kb.main)
 
-    except sqlite3.IntegrityError:
-        await message.answer("❌ Этот email уже зарегистрирован", reply_markup=kb.main)
     except sqlite3.Error as e:
         await message.answer(f"❌ Ошибка базы данных: {str(e)}", reply_markup=kb.main)
         print(f"Database error: {e}")
