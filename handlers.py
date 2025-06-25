@@ -409,28 +409,33 @@ async def show_statistics(message: Message):
         (message.from_user.id, current_month)
     )
 
-    # Создаем круговую диаграмму, если есть данные
+    # Создаем круговую диаграмму
     if categories:
-        labels = [cat[0] for cat in categories]
-        sizes = [float(cat[1]) for cat in categories]
-        total = sum(sizes)
-        percentages = [f'{(size/total)*100:.1f}%' for size in sizes]
-
-        plt.figure(figsize=(8, 8))
-        plt.pie(sizes, labels=labels, autopct=lambda p: f'{p:.1f}%', startangle=140)
-        plt.title(f'Расходы за {current_month} (Всего: {total:.2f} руб.)')
-        plt.axis('equal')
-
-        # Сохраняем в буфер
-        buf = BytesIO()
-        plt.savefig(buf, format='png', dpi=80)
-        buf.seek(0)
-        plt.close()
-        
-        await message.answer_photo(
-            photo=buf,
-            caption="📊 Круговая диаграмма расходов по категориям"
-        )
+        try:
+            labels = [cat[0] for cat in categories]
+            sizes = [float(cat[1]) for cat in categories]
+            total = sum(sizes)
+            
+            # Создание фигуры
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+            ax.axis('equal') 
+            plt.title(f'Распределение расходов за {current_month}\nВсего: {total:.2f} руб.')
+            
+            # Сохранение в буфер
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=80, bbox_inches='tight')
+            buf.seek(0)
+            plt.close(fig) 
+            
+            await message.answer_photo(
+                photo=buf,
+                caption="📊 Визуализация ваших расходов по категориям"
+            )
+            buf.close() 
+        except Exception as e:
+            print(f"Ошибка при создании диаграммы: {e}")
+            await message.answer("⚠️ Не удалось создать диаграмму расходов")
 
     # текстовый отчет
     response = ["📊 <b>Статистика расходов</b>\n"]
