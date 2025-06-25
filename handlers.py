@@ -1,6 +1,5 @@
 from datetime import datetime, time, timedelta
 from aiogram import Bot, F, Router
-from aiogram.types import BufferedInputFile
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import State, StatesGroup
@@ -9,8 +8,13 @@ import keyboard as kb
 import sqlite3
 import asyncio
 import re
-import matplotlib.pyplot as plt
-from io import BytesIO
+import bcrypt
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def check_password(password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(password.encode(), hashed_password.encode())
 
 router = Router()
 
@@ -87,11 +91,40 @@ async def reset_state(state: FSMContext):
         await state.clear()
 
 
+async def check_auth(message: Message, state: FSMContext) -> bool:
+    user = await fetch_sql("SELECT password_hash FROM users WHERE user_id = ?", (message.from_user.id,))
+    if not user:
+        await message.answer("❌ Сначала зарегистрируйтесь через /register.")
+        return False
+
+    auth_data = await state.get_data()
+    if auth_data.get("authenticated"):
+        return True
+
+    await message.answer("🔐 Введите пароль для доступа:", reply_markup=kb.remove_keyboard)
+    await state.set_state("waiting_for_password")
+    return False
+
+@router.message(F.state == "waiting_for_password")
+async def handle_password_input(message: Message, state: FSMContext):
+    user = await fetch_sql("SELECT password_hash FROM users WHERE user_id = ?", (message.from_user.id,))
+    if not user:
+        await state.clear()
+        return
+
+    if check_password(message.text, user[0][0]):
+        await state.update_data(authenticated=True)
+        await message.answer("✅ Доступ разрешен!", reply_markup=kb.main)
+        await state.clear()
+    else:
+        await message.answer("❌ Неверный пароль. Попробуйте еще раз:")
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await reset_state(state)
     await message.answer(
-        '💰 Привет! Я Финансовый Джинн - твой помощник по учету финансов.\n'
+        '💰 Привет! Я Финансовый Джин - твой помощник по учету финансов.\n'
         'Для начала регистрации напиши /register',
         reply_markup=kb.main
     )
@@ -111,49 +144,6 @@ async def process_name(message: Message, state: FSMContext):
     await message.answer("Введите дату рождения (ДД.ММ.ГГГГ):")
 
 
-@router.message(Register.name)
-async def process_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await state.set_state(Register.birth)
-    (await message.answer("Введите дату рождения (ДД.ММ.ГГГГ):")
-
-
-     @router.message(Register.birth)
-     async def process_birth(message: Message, state: FSMContext):
-         try:
-             # Проверка формата с регулярным выражением
-             if not re.fullmatch(r'^\d{2}\.\d{2}\.\d{4}$', message.text.strip()):
-                 raise ValueError("Неверный формат даты")
-
-             day, month, year = map(int, message.text.split('.'))
-
-         # Проверка корректности даты
-             if not (1 <= day <= 31):
-                 raise ValueError("День должен быть между 1 и 31")
-             if not (1 <= month <= 12):
-                 raise ValueError("Месяц должен быть между 1 и 12")
-             if year < 1900 or year > datetime.now().year - 5:  # Минимум 5 лет
-                 raise ValueError("Некорректный год рождения")
-
-             # Проверка существования даты
-             datetime(year, month, day)
-
-             # Если все проверки пройдены
-             await state.update_data(birth=message.text)
-             await state.set_state(Register.phone)
-             await message.answer("✅ Дата рождения сохранена! Теперь отправьте номер телефона:", reply_markup=kb.get_number)
-
-         except ValueError as e:
-             await message.answer(
-                 f"❌ Ошибка: {str(e)}\n"
-                 "Пожалуйста, введите дату рождения в формате ДД.ММ.ГГГГ\n"
-                 "Пример: 15.05.1990"
-             )
-         except Exception as e:
-             await message.answer("⚠️ Произошла непредвиденная ошибка. Попробуйте ещё раз.")
-             print(f"Ошибка при обработке даты рождения: {e}")
-
-
 @router.message(Register.birth)
 async def process_birth(message: Message, state: FSMContext):
     await state.update_data(birth=message.text)
@@ -167,7 +157,6 @@ async def process_phone(message: Message, state: FSMContext):
     await state.set_state(Register.email)
     await message.answer("Введите email. Пример example@mail.ru:", reply_markup=kb.remove_keyboard)
 
-
 @router.message(Register.email)
 async def process_email(message: Message, state: FSMContext):
     if not is_valid_email(message.text):
@@ -175,14 +164,28 @@ async def process_email(message: Message, state: FSMContext):
         return
 
     data = await state.get_data()
+    await message.answer("🔐 Придумайте пароль для доступа к боту:")
+    await state.update_data(email=message.text)
+    await state.set_state(Register.password)  # Новое состояние для пароля
+
+@router.message(Register.password)
+async def process_password(message: Message, state: FSMContext):
+    password = message.text.strip()
+    if len(password) < 4:
+        await message.answer("❌ Пароль должен быть не менее 4 символов. Попробуйте еще раз:")
+        return
+
+    data = await state.get_data()
+    hashed_password = hash_password(password)
+
     success = await execute_sql(
-        "INSERT INTO users (user_id, name, birth_date, phone, email) VALUES (?, ?, ?, ?, ?)",
-        (message.from_user.id, data['name'], data['birth'], data['phone'], message.text)
+        "INSERT INTO users (user_id, name, birth_date, phone, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
+        (message.from_user.id, data['name'], data['birth'], data['phone'], data['email'], hashed_password)
     )
 
     if success:
         await message.answer(
-            "✅ Регистрация завершена!\n"
+            "✅ Регистрация завершена! Теперь при каждом входе вводите пароль.",
             f"👤 {data['name']}\n"
             f"🎂 {data['birth']}\n"
             f"📱 {data['phone']}\n"
@@ -193,6 +196,10 @@ async def process_email(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка сохранения", reply_markup=kb.main)
     await state.clear()
 
+@router.message(F.text == 'Внести траты')
+async def add_expense(message: Message, state: FSMContext):
+    if not await check_auth(message, state):
+        return
 
 @router.message(F.text == 'Настройки')
 async def settings_menu(message: Message, state: FSMContext):
@@ -445,53 +452,13 @@ async def show_statistics(message: Message):
     six_months_ago = (now - timedelta(days=180)).strftime("%Y-%m-%d")
     current_date = now.strftime("%Y-%m-%d")
 
-    # Получаем данные по категориям
+    # Статистика по категориям за текущий месяц
     categories = await fetch_sql(
         "SELECT category, SUM(amount) FROM transactions "
         "WHERE user_id = ? AND type = 'расход' AND strftime('%Y-%m', date) = ? "
         "GROUP BY category ORDER BY SUM(amount) DESC",
         (message.from_user.id, current_month)
     )
-
-    # Создаем круговую диаграмму
-    if categories:
-        try:
-            labels = [cat[0] for cat in categories]
-            sizes = [float(cat[1]) for cat in categories]
-            total = sum(sizes)
-            
-            # Создание фигуры
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
-            ax.axis('equal') 
-            plt.title(f'Распределение расходов за {current_month}\nВсего: {total:.2f} руб.')
-            
-            # Сохранение в буфер
-            buf = BytesIO()
-            plt.savefig(buf, format='png', dpi=80, bbox_inches='tight')
-            buf.seek(0)
-            plt.close(fig) 
-
-            photo = BufferedInputFile(buf.getvalue(), filename='graph.png')
-            
-            await message.answer_photo(
-                photo=photo,
-                caption="📊 Визуализация ваших расходов по категориям"
-            )
-            buf.close() 
-        except Exception as e:
-            print(f"Ошибка при создании диаграммы: {e}")
-            await message.answer("⚠️ Не удалось создать диаграмму расходов")
-
-    # текстовый отчет
-    response = ["📊 <b>Статистика расходов</b>\n"]
-
-    if categories:
-        response.append("\n<b>По категориям в этом месяце:</b>")
-        for category, amount in categories:
-            response.append(f"▪️ {category}: {amount:.2f} руб.")
-    else:
-        response.append("\nНет данных о расходах в этом месяце.")
 
     # Общие суммы за периоды
     periods = [
@@ -512,6 +479,15 @@ async def show_statistics(message: Message):
          [six_months_ago, current_date])
     ]
 
+    response = ["<b>Статистика расходов</b>\n"]
+
+    if categories:
+        response.append("\n<b>По категориям в этом месяце:</b>")
+        for category, amount in categories:
+            response.append(f"▪️ {category}: {amount:.2f} руб.")
+    else:
+        response.append("\nНет данных о расходах в этом месяце.")
+
     response.append("\n<b>Общие суммы:</b>")
     for period_name, condition, params in periods:
         total = await fetch_sql(
@@ -521,6 +497,6 @@ async def show_statistics(message: Message):
         )
         
         amount = total[0][0] if total and total[0][0] is not None else 0
-        response.append(f"▪️ {period_name}: {amount:.2f} руб.")
+        response.append(f"{period_name}: {amount:.2f} руб.")
 
     await message.answer("\n".join(response), reply_markup=kb.main)

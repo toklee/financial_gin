@@ -4,6 +4,11 @@ from aiogram.types import (
     ReplyKeyboardRemove
 )
 
+auth = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="🔐 Ввести пароль")]],
+    resize_keyboard=True
+)
+
 main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text='Настройки'), KeyboardButton(text='Внести траты')],

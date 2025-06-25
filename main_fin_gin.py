@@ -1,6 +1,3 @@
-import matplotlib
-matplotlib.use('Agg')
-
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -8,11 +5,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from handlers import router
 import sqlite3
-from dotenv import load_dotenv
 import os
 
-load_dotenv()  # Загружает переменные из .env
-BOT_TOKEN = os.getenv("TOKEN")  # Получает токен
 
 def init_db():
     if os.path.exists('budget.db'):
@@ -27,7 +21,8 @@ def init_db():
             name TEXT NOT NULL,
             birth_date TEXT NOT NULL,
             phone TEXT NOT NULL,
-            email TEXT NOT NULL
+            email TEXT NOT NULL,
+            password_hash TEXT   
         )
     ''')
 
@@ -60,14 +55,14 @@ def init_db():
 async def main():
     init_db()
     bot = Bot(
-        token=BOT_TOKEN,
+        token="8075714721:AAF053-mBOuGP_AxzPUXeaLhABQM04CIgJE",
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
 
     await dp.start_polling(bot)
-
+    
 
 if __name__ == '__main__':
     asyncio.run(main())
