@@ -103,6 +103,11 @@ async def start_registration(message: Message, state: FSMContext):
     await state.set_state(Register.name)
     await message.answer("Введите ваше ФИО:", reply_markup=kb.remove_keyboard)
 
+@router.message(Register.name)
+async def process_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await state.set_state(Register.birth)
+    (await message.answer("Введите дату рождения (ДД.ММ.ГГГГ):")
 
 @router.message(Register.birth)
 async def process_birth(message: Message, state: FSMContext):
