@@ -11,6 +11,7 @@ import asyncio
 import re
 import bcrypt
 
+active_sessions = {}  # Хранит user_id: timestamp последней активности
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -126,34 +127,83 @@ async def reset_state(state: FSMContext):
     if current_state:
         await state.clear()
 
-
-async def check_auth(message: Message, state: FSMContext) -> bool:
-    user = await fetch_sql("SELECT password_hash FROM users WHERE user_id = ?", (message.from_user.id,))
-    if not user:
-        await message.answer("❌ Сначала зарегистрируйтесь через /register.")
-        return False
-
-    auth_data = await state.get_data()
-    if auth_data.get("authenticated"):
-        return True
-
-    await message.answer("🔐 Введите пароль для доступа:", reply_markup=kb.remove_keyboard)
-    await state.set_state("waiting_for_password")
-    return False
-
-@router.message(F.state == "waiting_for_password")
-async def handle_password_input(message: Message, state: FSMContext):
-    user = await fetch_sql("SELECT password_hash FROM users WHERE user_id = ?", (message.from_user.id,))
-    if not user:
-        await state.clear()
+@router.message(F.text == 'Внести доход')
+async def add_income(message: Message, state: FSMContext):
+    if not await check_auth(message, state):
         return
+        
+    await reset_state(state)
+    await state.set_state(TransactionStates.INCOME_AMOUNT)
+    await message.answer(
+        "💰 Введите сумму дохода:",
+        reply_markup=kb.remove_keyboard
+    )
 
-    if check_password(message.text, user[0][0]):
-        await state.update_data(authenticated=True)
-        await message.answer("✅ Доступ разрешен!", reply_markup=kb.main)
-        await state.clear()
+@router.message(F.text == 'Баланс')
+async def show_balance(message: Message):
+    # Получаем сумму доходов
+    income = await fetch_sql(
+        "SELECT SUM(amount) FROM transactions WHERE user_id = ? AND type = 'доход'",
+        (message.from_user.id,)
+    )
+    
+    # Получаем сумму расходов
+    expenses = await fetch_sql(
+        "SELECT SUM(amount) FROM transactions WHERE user_id = ? AND type = 'расход'",
+        (message.from_user.id,)
+    )
+    
+    total_income = income[0][0] if income and income[0][0] is not None else 0
+    total_expenses = expenses[0][0] if expenses and expenses[0][0] is not None else 0
+    balance = total_income - total_expenses
+    
+    # Получаем последние 5 операций
+    last_transactions = await fetch_sql(
+        "SELECT amount, type, date FROM transactions "
+        "WHERE user_id = ? "
+        "ORDER BY date DESC LIMIT 5",
+        (message.from_user.id,)
+    )
+    
+    response = [
+        f"<b>💰 Ваш баланс:</b> {balance:.2f} руб.",
+        f"Доходы: {total_income:.2f} руб.",
+        f"Расходы: {total_expenses:.2f} руб.",
+        "\n<b>Последние операции:</b>"
+    ]
+    
+    if last_transactions:
+        for amount, tr_type, date in last_transactions:
+            icon = "⬆️" if tr_type == 'доход' else "⬇️"
+            response.append(f"{icon} {amount:.2f} руб. - {date.split()[0]}")
     else:
-        await message.answer("❌ Неверный пароль. Попробуйте еще раз:")
+        response.append("Нет данных об операциях")
+    
+    await message.answer("\n".join(response), reply_markup=kb.main)
+
+@router.message(TransactionStates.INCOME_AMOUNT)
+async def process_income(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.strip())
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной")
+
+        success = await execute_sql(
+            "INSERT INTO transactions (user_id, amount, category, type, date) VALUES (?, ?, ?, ?, ?)",
+            (message.from_user.id, amount, "доход", "доход", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+
+        if success:
+            await message.answer(
+                f"✅ Доход {amount:.2f} руб. сохранен!",
+                reply_markup=kb.main
+            )
+        else:
+            await message.answer("❌ Ошибка сохранения", reply_markup=kb.main)
+    except ValueError:
+        await message.answer("❌ Введите число (например: 50000)", reply_markup=kb.main)
+    finally:
+        await state.clear()
 
 
 @router.message(CommandStart())
