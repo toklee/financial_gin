@@ -28,6 +28,7 @@ class Register(StatesGroup):
 
 class TransactionStates(StatesGroup):
     AMOUNT = State()
+    INCOME_AMOUNT = State()
 
 
 class GoalStates(StatesGroup):
@@ -124,8 +125,6 @@ async def reset_state(state: FSMContext):
 
 @router.message(F.text == 'Внести доход')
 async def add_income(message: Message, state: FSMContext):
-    if not await check_auth(message, state):
-        return
         
     await reset_state(state)
     await state.set_state(TransactionStates.INCOME_AMOUNT)
@@ -312,10 +311,6 @@ async def process_email(message: Message, state: FSMContext):
     finally:
         await state.clear()
 
-@router.message(F.text == 'Внести траты')
-async def add_expense(message: Message, state: FSMContext):
-    if not await check_auth(message, state):
-        return
 
 @router.message(F.text == 'Настройки')
 async def settings_menu(message: Message, state: FSMContext):
