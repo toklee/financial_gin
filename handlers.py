@@ -437,9 +437,11 @@ async def show_statistics(message: Message):
             plt.savefig(buf, format='png', dpi=80, bbox_inches='tight')
             buf.seek(0)
             plt.close(fig) 
+
+            photo = BufferedInputFile(buf.getvalue(), filename='graph.png')
             
             await message.answer_photo(
-                photo=buf,
+                photo=photo,
                 caption="📊 Визуализация ваших расходов по категориям"
             )
             buf.close() 
