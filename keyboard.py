@@ -12,6 +12,7 @@ auth = ReplyKeyboardMarkup(
 main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text='Настройки'), KeyboardButton(text='Внести траты')],
+        [KeyboardButton(text='Внести доход'), KeyboardButton(text='Баланс')],
         [KeyboardButton(text='Добавить цель'), KeyboardButton(text='Статистика')]
     ],
     resize_keyboard=True,
