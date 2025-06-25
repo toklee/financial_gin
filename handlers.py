@@ -104,21 +104,47 @@ async def start_registration(message: Message, state: FSMContext):
     await message.answer("Введите ваше ФИО:", reply_markup=kb.remove_keyboard)
 
 
+@router.message(Register.name)
+async def process_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await state.set_state(Register.birth)
+    await message.answer("Введите дату рождения (ДД.ММ.ГГГГ):")
+
+
 @router.message(Register.birth)
 async def process_birth(message: Message, state: FSMContext):
-    birth_text = message.text.strip()
-    # Проверка формата ДД.ММ.ГГГГ
     try:
-        day, month, year = map(int, birth_text.split('.'))
+        # Проверка формата с регулярным выражением
+        if not re.fullmatch(r'^\d{2}\.\d{2}\.\d{4}$', message.text.strip()):
+            raise ValueError("Неверный формат даты")
+
+        day, month, year = map(int, message.text.split('.'))
+
+    # Проверка корректности даты
         if not (1 <= day <= 31):
-            raise ValueError("День должен быть от 1 до 31")
+            raise ValueError("День должен быть между 1 и 31")
         if not (1 <= month <= 12):
-            raise ValueError("Месяц должен быть от 1 до 12")
+            raise ValueError("Месяц должен быть между 1 и 12")
+        if year < 1900 or year > datetime.now().year - 5:  # Минимум 5 лет
+            raise ValueError("Некорректный год рождения")
+
         # Проверка существования даты
         datetime(year, month, day)
-    except Exception:
-        await message.answer("Некорректная дата рождения. Введите в формате ДД.ММ.ГГГГ (день ≤ 31, месяц ≤ 12, дата должна существовать):")
-        return
+
+        # Если все проверки пройдены
+        await state.update_data(birth=message.text)
+        await state.set_state(Register.phone)
+        await message.answer("✅ Дата рождения сохранена! Теперь отправьте номер телефона:", reply_markup=kb.get_number)
+
+    except ValueError as e:
+        await message.answer(
+            f"❌ Ошибка: {str(e)}\n"
+            "Пожалуйста, введите дату рождения в формате ДД.ММ.ГГГГ\n"
+            "Пример: 15.05.1990"
+        )
+    except Exception as e:
+        await message.answer("⚠️ Произошла непредвиденная ошибка. Попробуйте ещё раз.")
+        print(f"Ошибка при обработке даты рождения: {e}")
 
 
 @router.message(Register.birth)

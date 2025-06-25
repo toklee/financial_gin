@@ -1,0 +1,11 @@
+modules = ["python-3.12"]
+run = "python main.py"
+
+[nix]
+channel = "stable-24_05"
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
+
+run = "python main_fin_gin.py"
+
+[deployment]
+run = ["sh", "-c", "python main_fin_gin.py"]
