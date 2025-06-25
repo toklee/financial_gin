@@ -26,8 +26,7 @@ def init_db():
             name TEXT NOT NULL,
             birth_date TEXT NOT NULL,
             phone TEXT NOT NULL,
-            email TEXT NOT NULL,
-            password_hash TEXT NOT NULL
+            email TEXT NOT NULL
         )
     ''')
 

@@ -10,14 +10,10 @@ import sqlite3
 import asyncio
 import re
 import bcrypt
+import matplotlib.pyplot as plt
+from io import BytesIO
+from aiogram.types import BufferedInputFile
 
-active_sessions = {}  # Хранит user_id: timestamp последней активности
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-def check_password(password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed_password.encode())
 
 router = Router()
 
@@ -66,7 +62,6 @@ async def init_db():
                 birth_date TEXT,
                 phone TEXT,
                 email TEXT UNIQUE,
-                password_hash TEXT NOT NULL,
                 registered_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -286,51 +281,23 @@ async def process_email(message: Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    await message.answer("🔐 Придумайте пароль для доступа к боту:")
-    await state.update_data(email=message.text)
-    await state.set_state(Register.password)  # Новое состояние для пароля
-
-    
-@router.message(Register.password)
-async def process_password(message: Message, state: FSMContext):
-    try:
-        await message.delete()
-    except:
-        pass   
-        
-    password = message.text.strip()
-    if len(password) < 4:
-        await message.answer("❌ Пароль должен быть не менее 4 символов. Попробуйте еще раз:")
-        await asyncio.sleep(5)
-        try:
-            await error_msg.delete()
-        except:
-            pass
-        return
-
-    data = await state.get_data()
-    hashed_password = hash_password(password)
     
     try:
         await init_db()
 
-        columns = await fetch_sql("PRAGMA table_info(users)")
-        if not any(col[1] == 'password_hash' for col in columns):
-            await execute_sql("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
-
-        # Пытаемся сохранить пользователя
+        # Сохраняем пользователя без пароля
         success = await execute_sql(
-            "INSERT INTO users (user_id, name, birth_date, phone, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
-            (message.from_user.id, data['name'], data['birth'], data['phone'], data['email'], hashed_password)
+            "INSERT INTO users (user_id, name, birth_date, phone, email) VALUES (?, ?, ?, ?, ?)",
+            (message.from_user.id, data['name'], data['birth'], data['phone'], message.text)
         )
 
         if success:
             await message.answer(
-                "✅ Регистрация завершена! Теперь при каждом входе вводите пароль.\n"
+                "✅ Регистрация завершена!\n"
                 f"👤 {data['name']}\n"
                 f"🎂 {data['birth']}\n"
                 f"📱 {data['phone']}\n"
-                f"📧 {data['email']}",
+                f"📧 {message.text}",
                 reply_markup=kb.main
             )
         else:
@@ -344,7 +311,6 @@ async def process_password(message: Message, state: FSMContext):
         print(f"Unexpected error: {e}")
     finally:
         await state.clear()
-        
 
 @router.message(F.text == 'Внести траты')
 async def add_expense(message: Message, state: FSMContext):
