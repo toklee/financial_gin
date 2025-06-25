@@ -5,12 +5,28 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from handlers import router
 import sqlite3
+from flask import Flask
+from threading import Thread
 from dotenv import load_dotenv
 import os
 
 load_dotenv()  # Загружает переменные из .env
 
 TOKEN = os.getenv("TOKEN")
+
+
+# --- Инициализация Flask (для Replit 24/7) ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Бот работает! Сервер активен."
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+# Запуск Flask в отдельном потоке
+Thread(target=run_flask, daemon=True).start()
 
 
 def init_db():

@@ -123,6 +123,7 @@ async def reset_state(state: FSMContext):
     if current_state:
         await state.clear()
 
+
 @router.message(F.text == 'Внести доход')
 async def add_income(message: Message, state: FSMContext):
         
