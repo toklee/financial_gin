@@ -13,16 +13,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()  # Загружает переменные из .env
-
 TOKEN = os.getenv("TOKEN")
-
-
-def auto_ping():
-    while True:
-        requests.get("https://replit.com/@annadanilenko06/financialgin-2?v=1") 
-        time.sleep(300)  # 5 минут
-
-Thread(target=auto_ping, daemon=True).start()
 
 
 # --- Инициализация Flask (для Replit 24/7) ---
@@ -35,14 +26,18 @@ def home():
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-# Запуск Flask в отдельном потоке
-Thread(target=run_flask, daemon=True).start()
+
+# Функция для пинга 
+def auto_ping():
+    while True:
+        try:
+            requests.get("https://replit.com/@annadanilenko06/financialgin-2#main_fin_gin.py") 
+            time.sleep(300)
+        except:
+            pass
 
 
 def init_db():
-    if os.path.exists('budget.db'):
-        os.remove('budget.db')
-
     conn = sqlite3.connect('budget.db')
     cursor = conn.cursor()
 
@@ -85,7 +80,7 @@ def init_db():
 async def main():
     init_db()
     bot = Bot(
-        token="TOKEN",
+        token=TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher(storage=MemoryStorage())
@@ -97,24 +92,14 @@ async def main():
 async def on_startup():
     """Действия при запуске бота"""
     print("🟢 Бот запускается...")
-    if await init_db():
-        print("✅ База данных готова к работе")
-    else:
-        print("❌ Проблемы с инициализацией БД!")
-
-
-async def init_db():
-    try:
-        await execute_sql("CREATE TABLE IF NOT EXISTS users (...)")
-        print("Таблицы созданы")
-        return True
-    except Exception as e:
-        print(f"Ошибка инициализации БД: {e}")
-        return False
+    init_db()  
+    print("✅ База данных готова к работе")
     
 
 if __name__ == '__main__':
+    init_db()
+    Thread(target=run_flask, daemon=True).start()
+    Thread(target=auto_ping, daemon=True).start()
     from aiogram import executor
     executor.start_polling(dp, on_startup=on_startup)
-    asyncio.run(main())
-    asyncio.run(init_db())
+ 
