@@ -9,3 +9,5 @@ run = "python main_fin_gin.py"
 
 [deployment]
 run = ["sh", "-c", "python main_fin_gin.py"]
+
+

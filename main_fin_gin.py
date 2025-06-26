@@ -31,7 +31,7 @@ def run_flask():
 def auto_ping():
     while True:
         try:
-            requests.get("https://replit.com/@annadanilenko06/financialgin-2#main_fin_gin.py") 
+            requests.get("https://replit.com/@annadanilenko06/financialgin/repl.co") 
             time.sleep(300)
         except:
             pass
